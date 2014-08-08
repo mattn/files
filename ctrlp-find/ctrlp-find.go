@@ -20,7 +20,7 @@ func main() {
 	if len(os.Args) > 1 {
 		base = os.Args[1]
 	}
-	filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
 		if !info.IsDir() {
 			if p, err := filepath.Abs(path); err == nil {
 				fmt.Println(p)
@@ -32,4 +32,9 @@ func main() {
 		}
 		return nil
 	})
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
