@@ -8,8 +8,8 @@ import (
 	"regexp"
 )
 
-var ignore = flag.String("ignore", "^(.git|.hg|.svn|_darcs|.bzr)$", "Ignore directory")
-var progress = flag.Bool("progress", false, "Progress message")
+var ignore = flag.String("i", "^(.git|.hg|.svn|_darcs|.bzr)$", "Ignore directory")
+var progress = flag.Bool("p", false, "Progress message")
 
 func main() {
 	flag.Parse()
