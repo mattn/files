@@ -23,7 +23,7 @@ func main() {
 	err = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
 		if !info.IsDir() {
 			if p, err := filepath.Abs(path); err == nil {
-				fmt.Println(p)
+				fmt.Println(filepath.ToSlash(p))
 			}
 		} else {
 			if ignorere.MatchString(info.Name()) {
