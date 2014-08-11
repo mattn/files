@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
@@ -29,6 +30,7 @@ func main() {
 		os.Exit(1)
 	}
 	n := 0
+	buf := bufio.NewWriter(os.Stdout)
 	err = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
 		if info == nil {
 			return err
@@ -42,7 +44,7 @@ func main() {
 					}
 				}
 				if p, err = filepath.Rel(base, p); err == nil {
-					fmt.Println(filepath.ToSlash(p))
+					fmt.Fprintln(buf, filepath.ToSlash(p))
 				}
 			}
 		} else {
@@ -52,6 +54,7 @@ func main() {
 		}
 		return nil
 	})
+	buf.Flush()
 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
