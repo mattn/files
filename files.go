@@ -37,7 +37,9 @@ func main() {
 			if p, err := filepath.Abs(path); err == nil {
 				if *progress {
 					n++
-					fmt.Fprintf(os.Stderr, "\r%d            \r", n)
+					if n % 10 == 0 {
+						fmt.Fprintf(os.Stderr, "\r%d            \r", n)
+					}
 				}
 				if p, err = filepath.Rel(base, p); err == nil {
 					fmt.Println(filepath.ToSlash(p))
