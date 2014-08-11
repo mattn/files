@@ -22,6 +22,12 @@ func main() {
 	if flag.NArg() > 1 {
 		base = flag.Arg(0)
 	}
+
+	base, err = filepath.Abs(base)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	n := 0
 	err = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
 		if info == nil {
@@ -33,7 +39,9 @@ func main() {
 					n++
 					fmt.Fprintf(os.Stderr, "\r%d            \r", n)
 				}
-				fmt.Println(filepath.ToSlash(p))
+				if p, err = filepath.Rel(base, p); err == nil {
+					fmt.Println(filepath.ToSlash(p))
+				}
 			}
 		} else {
 			if ignorere.MatchString(info.Name()) {
