@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"os"
@@ -11,6 +10,8 @@ import (
 
 var ignore = flag.String("i", "^(.git|.hg|.svn|_darcs|.bzr)$", "Ignore directory")
 var progress = flag.Bool("p", false, "Progress message")
+
+var printLine = fmt.Println
 
 func main() {
 	flag.Parse()
@@ -30,7 +31,6 @@ func main() {
 		os.Exit(1)
 	}
 	n := 0
-	buf := bufio.NewWriter(os.Stdout)
 	err = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
 		if info == nil {
 			return err
@@ -44,7 +44,7 @@ func main() {
 					}
 				}
 				if p, err = filepath.Rel(base, p); err == nil {
-					fmt.Fprintln(buf, filepath.ToSlash(p))
+					fmt.Println(filepath.ToSlash(p))
 				}
 			}
 		} else {
@@ -54,7 +54,6 @@ func main() {
 		}
 		return nil
 	})
-	buf.Flush()
 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
