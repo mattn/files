@@ -80,7 +80,6 @@ func filesAsync(base string) {
 		}
 	}
 
-	wg.Add(1)
 	fi, err := os.Lstat(base)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -90,6 +89,8 @@ func filesAsync(base string) {
 		fmt.Fprintf(os.Stderr, "%q is not a directory")
 		os.Exit(1)
 	}
+
+	wg.Add(1)
 	go fn(base)
 
 	go func() {
