@@ -43,9 +43,7 @@ func main() {
 						fmt.Fprintf(os.Stderr, "\r%d            \r", n)
 					}
 				}
-				if p, err = filepath.Rel(base, p); err == nil {
-					fmt.Println(filepath.ToSlash(p))
-				}
+				fmt.Println(filepath.ToSlash(p[len(base)+1:]))
 			}
 		} else {
 			if ignorere.MatchString(info.Name()) {
