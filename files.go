@@ -36,15 +36,13 @@ func main() {
 			return err
 		}
 		if !info.IsDir() {
-			if p, err := filepath.Abs(path); err == nil {
-				if *progress {
-					n++
-					if n % 10 == 0 {
-						fmt.Fprintf(os.Stderr, "\r%d            \r", n)
-					}
+			if *progress {
+				n++
+				if n % 10 == 0 {
+					fmt.Fprintf(os.Stderr, "\r%d            \r", n)
 				}
-				fmt.Println(filepath.ToSlash(p[len(base)+1:]))
 			}
+			fmt.Println(filepath.ToSlash(path[len(base)+1:]))
 		} else {
 			if ignorere.MatchString(info.Name()) {
 				return filepath.SkipDir
