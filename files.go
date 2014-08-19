@@ -10,7 +10,7 @@ import (
 	"sync"
 )
 
-var ignore = flag.String("i", "^(.git|.hg|.svn|_darcs|.bzr)$", "Ignore directory")
+var ignore = flag.String("i", `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`, "Ignore directory")
 var progress = flag.Bool("p", false, "Progress message")
 var async = flag.Bool("async", false, "Asynchronized")
 
