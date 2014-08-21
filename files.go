@@ -12,11 +12,20 @@ import (
 
 var ignore = flag.String("i", `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`, "Ignore directory")
 var progress = flag.Bool("p", false, "Progress message")
-var async = flag.Bool("a", false, "Asynchronized")
+var async = flag.Bool("A", false, "Asynchronized")
+var absolute = flag.Bool("a", false, "Absolute path")
 
 var ignorere *regexp.Regexp
 
 var printLine = fmt.Println
+
+var printPath = func(path string) {
+	p, err := filepath.Abs(path)
+	if err == nil {
+		path = p
+	}
+	printLine(path)
+}
 
 func filesSync(base string) {
 	n := 0
@@ -31,7 +40,11 @@ func filesSync(base string) {
 					fmt.Fprintf(os.Stderr, "\r%d            \r", n)
 				}
 			}
-			fmt.Println(filepath.ToSlash(path[len(base)+1:]))
+			if *absolute {
+				fmt.Println(path)
+			} else {
+				fmt.Println(filepath.ToSlash(path[len(base)+1:]))
+			}
 		} else {
 			if ignorere.MatchString(info.Name()) {
 				return filepath.SkipDir
@@ -75,7 +88,7 @@ func filesAsync(base string) {
 				wg.Add(1)
 				go fn(filepath.Join(p, fi.Name()))
 			} else {
-				q <- filepath.Join(p, fi.Name())[len(base)+1:]
+				q <- filepath.ToSlash(filepath.Join(p, fi.Name()))
 			}
 		}
 	}
@@ -105,7 +118,11 @@ func filesAsync(base string) {
 			if n%10 == 0 {
 				fmt.Fprintf(os.Stderr, "\r%d            \r", n)
 			}
-			fmt.Println(p)
+			if *absolute {
+				fmt.Println(p)
+			} else {
+				fmt.Println(p[len(base)+1:])
+			}
 		}
 	} else {
 		for p := range q {
