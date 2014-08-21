@@ -34,6 +34,9 @@ func filesSync(base string) {
 			return err
 		}
 		if !info.IsDir() {
+			if ignorere.MatchString(info.Name()) {
+				return nil
+			}
 			if *progress {
 				n++
 				if n % 10 == 0 {
@@ -41,7 +44,7 @@ func filesSync(base string) {
 				}
 			}
 			if *absolute {
-				fmt.Println(path)
+				fmt.Println(filepath.ToSlash(path))
 			} else {
 				fmt.Println(filepath.ToSlash(path[len(base)+1:]))
 			}
@@ -126,7 +129,11 @@ func filesAsync(base string) {
 		}
 	} else {
 		for p := range q {
-			fmt.Println(p)
+			if *absolute {
+				fmt.Println(p)
+			} else {
+				fmt.Println(p[len(base)+1:])
+			}
 		}
 	}
 }
