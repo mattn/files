@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"sync"
 )
 
@@ -14,6 +15,7 @@ var ignore = flag.String("i", `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`, "Ignore direc
 var progress = flag.Bool("p", false, "Progress message")
 var async = flag.Bool("A", false, "Asynchronized")
 var absolute = flag.Bool("a", false, "Absolute path")
+var fsort = flag.Bool("s", false, "Sort")
 
 var ignorere *regexp.Regexp
 
@@ -27,42 +29,47 @@ var printPath = func(path string) {
 	printLine(path)
 }
 
-func filesSync(base string) {
-	n := 0
-	err := filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
-		if info == nil {
-			return err
-		}
-		if !info.IsDir() {
-			if ignorere.MatchString(info.Name()) {
-				return nil
+func filesSync(base string) chan string {
+	q := make(chan string, 20)
+
+	go func() {
+		n := 0
+		err := filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
+			if info == nil {
+				return err
 			}
-			if *progress {
-				n++
-				if n % 10 == 0 {
-					fmt.Fprintf(os.Stderr, "\r%d            \r", n)
+			if !info.IsDir() {
+				if ignorere.MatchString(info.Name()) {
+					return nil
+				}
+				if *progress {
+					n++
+					if n % 10 == 0 {
+						fmt.Fprintf(os.Stderr, "\r%d            \r", n)
+					}
+				}
+
+				q <- filepath.ToSlash(path)
+			} else {
+				if ignorere.MatchString(info.Name()) {
+					return filepath.SkipDir
 				}
 			}
-			if *absolute {
-				fmt.Println(filepath.ToSlash(path))
-			} else {
-				fmt.Println(filepath.ToSlash(path[len(base)+1:]))
-			}
-		} else {
-			if ignorere.MatchString(info.Name()) {
-				return filepath.SkipDir
-			}
-		}
-		return nil
-	})
+			return nil
+		})
 
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+
+		close(q)
+	}()
+
+	return q
 }
 
-func filesAsync(base string) {
+func filesAsync(base string) chan string {
 	wg := new(sync.WaitGroup)
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
@@ -113,29 +120,7 @@ func filesAsync(base string) {
 		wg.Wait()
 		close(q)
 	}()
-
-	n := 0
-	if *progress {
-		for p := range q {
-			n++
-			if n%10 == 0 {
-				fmt.Fprintf(os.Stderr, "\r%d            \r", n)
-			}
-			if *absolute {
-				fmt.Println(p)
-			} else {
-				fmt.Println(p[len(base)+1:])
-			}
-		}
-	} else {
-		for p := range q {
-			if *absolute {
-				fmt.Println(p)
-			} else {
-				fmt.Println(p[len(base)+1:])
-			}
-		}
-	}
+	return q
 }
 
 func main() {
@@ -158,9 +143,55 @@ func main() {
 		os.Exit(1)
 	}
 
+	var q chan string
+
 	if *async {
-		filesAsync(base)
+		q = filesAsync(base)
 	} else {
-		filesSync(base)
+		q = filesSync(base)
+	}
+
+	n := 0
+	if *fsort {
+		fs := []string{}
+		for p := range q {
+			if *progress {
+				n++
+				if n%10 == 0 {
+					fmt.Fprintf(os.Stderr, "\r%d            \r", n)
+				}
+			}
+			fs = append(fs, p)
+		}
+		sort.Strings(fs)
+		for _, p := range fs {
+			if *absolute {
+				fmt.Println(p)
+			} else {
+				fmt.Println(p[len(base)+1:])
+			}
+		}
+	} else {
+		if *progress {
+			for p := range q {
+				n++
+				if n%10 == 0 {
+					fmt.Fprintf(os.Stderr, "\r%d            \r", n)
+				}
+				if *absolute {
+					fmt.Println(p)
+				} else {
+					fmt.Println(p[len(base)+1:])
+				}
+			}
+		} else {
+			for p := range q {
+				if *absolute {
+					fmt.Println(p)
+				} else {
+					fmt.Println(p[len(base)+1:])
+				}
+			}
+		}
 	}
 }
