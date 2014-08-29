@@ -44,7 +44,7 @@ func filesSync(base string) chan string {
 				}
 				if *progress {
 					n++
-					if n % 10 == 0 {
+					if n%10 == 0 {
 						fmt.Fprintf(os.Stderr, "\r%d            \r", n)
 					}
 				}
