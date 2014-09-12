@@ -13,11 +13,13 @@ import (
 
 var ignore = flag.String("i", `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`, "Ignore directory")
 var progress = flag.Bool("p", false, "Progress message")
-var async = flag.Bool("A", false, "Asynchronized")
-var absolute = flag.Bool("a", false, "Absolute path")
-var fsort = flag.Bool("s", false, "Sort")
+var async = flag.Bool("A", false, "Asynchronized find")
+var absolute = flag.Bool("a", false, "Display absolute path")
+var fsort = flag.Bool("s", false, "Sort results")
+var match = flag.String("m", "", "Display matched files")
 
 var ignorere *regexp.Regexp
+var matchre *regexp.Regexp
 
 var printLine = fmt.Println
 
@@ -47,6 +49,9 @@ func filesSync(base string) chan string {
 					if n%10 == 0 {
 						fmt.Fprintf(os.Stderr, "\r%d            \r", n)
 					}
+				}
+				if matchre != nil && !matchre.MatchString(path) {
+					return nil
 				}
 
 				q <- filepath.ToSlash(path)
@@ -127,6 +132,14 @@ func main() {
 	flag.Parse()
 
 	var err error
+
+	if *match != "" {
+		matchre, err = regexp.Compile(*match)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
 	ignorere, err = regexp.Compile(*ignore)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
