@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -17,9 +18,11 @@ var async = flag.Bool("A", false, "Asynchronized find")
 var absolute = flag.Bool("a", false, "Display absolute path")
 var fsort = flag.Bool("s", false, "Sort results")
 var match = flag.String("m", "", "Display matched files")
+var maxfiles = flag.Int64("M", -1, "Max files")
 
 var ignorere *regexp.Regexp
 var matchre *regexp.Regexp
+var maxcount = int64(^uint64(0) >> 1)
 
 var printLine = fmt.Println
 
@@ -34,8 +37,9 @@ var printPath = func(path string) {
 func filesSync(base string) chan string {
 	q := make(chan string, 20)
 
+	maxError := errors.New("Overflow max count")
 	go func() {
-		n := 0
+		n := int64(0)
 		err := filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
 			if info == nil {
 				return err
@@ -44,16 +48,19 @@ func filesSync(base string) chan string {
 				if ignorere.MatchString(info.Name()) {
 					return nil
 				}
-				if *progress {
-					n++
-					if n%10 == 0 {
-						fmt.Fprintf(os.Stderr, "\r%d            \r", n)
-					}
-				}
 				if matchre != nil && !matchre.MatchString(path) {
 					return nil
 				}
 
+				n++
+				if n > maxcount {
+					return maxError
+				}
+				if *progress {
+					if n%10 == 0 {
+						fmt.Fprintf(os.Stderr, "\r%d            \r", n)
+					}
+				}
 				q <- filepath.ToSlash(path)
 			} else {
 				if ignorere.MatchString(info.Name()) {
@@ -63,7 +70,7 @@ func filesSync(base string) chan string {
 			return nil
 		})
 
-		if err != nil {
+		if err != nil && err != maxError {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -80,6 +87,7 @@ func filesAsync(base string) chan string {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	q := make(chan string, 20)
+	n := int64(0)
 
 	var fn func(p string)
 	fn = func(p string) {
@@ -103,6 +111,17 @@ func filesAsync(base string) chan string {
 				wg.Add(1)
 				go fn(filepath.Join(p, fi.Name()))
 			} else {
+				n++
+				// This is pseudo handling because this is not atomic
+				if n > maxcount {
+					fmt.Fprintln(os.Stderr, "Overflow max count")
+					return
+				}
+				if *progress {
+					if n%10 == 0 {
+						fmt.Fprintf(os.Stderr, "\r%d            \r", n)
+					}
+				}
 				q <- filepath.ToSlash(filepath.Join(p, fi.Name()))
 			}
 		}
@@ -156,6 +175,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	if *maxfiles > 0 {
+		maxcount = *maxfiles
+	}
+
 	var q chan string
 
 	if *async {
@@ -164,16 +187,9 @@ func main() {
 		q = filesSync(base)
 	}
 
-	n := 0
 	if *fsort {
 		fs := []string{}
 		for p := range q {
-			if *progress {
-				n++
-				if n%10 == 0 {
-					fmt.Fprintf(os.Stderr, "\r%d            \r", n)
-				}
-			}
 			fs = append(fs, p)
 		}
 		sort.Strings(fs)
@@ -185,25 +201,11 @@ func main() {
 			}
 		}
 	} else {
-		if *progress {
-			for p := range q {
-				n++
-				if n%10 == 0 {
-					fmt.Fprintf(os.Stderr, "\r%d            \r", n)
-				}
-				if *absolute {
-					fmt.Println(p)
-				} else {
-					fmt.Println(p[len(base)+1:])
-				}
-			}
-		} else {
-			for p := range q {
-				if *absolute {
-					fmt.Println(p)
-				} else {
-					fmt.Println(p[len(base)+1:])
-				}
+		for p := range q {
+			if *absolute {
+				fmt.Println(p)
+			} else {
+				fmt.Println(p[len(base)+1:])
 			}
 		}
 	}
