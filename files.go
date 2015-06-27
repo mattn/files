@@ -31,16 +31,6 @@ func env(key, def string) string {
 	return def
 }
 
-var printLine = fmt.Println
-
-var printPath = func(path string) {
-	p, err := filepath.Abs(path)
-	if err == nil {
-		path = p
-	}
-	printLine(path)
-}
-
 func filesSync(base string) chan string {
 	q := make(chan string, 20)
 
@@ -194,6 +184,17 @@ func main() {
 		q = filesSync(base)
 	}
 
+	printLine := func() func(string) {
+		if *absolute {
+			return func(s string) {
+				fmt.Println(s)
+			}
+		} else {
+			return func(s string) {
+				fmt.Println(s[len(base)+1:])
+			}
+		}
+	}()
 	if *fsort {
 		fs := []string{}
 		for p := range q {
@@ -201,19 +202,11 @@ func main() {
 		}
 		sort.Strings(fs)
 		for _, p := range fs {
-			if *absolute {
-				fmt.Println(p)
-			} else {
-				fmt.Println(p[len(base)+1:])
-			}
+			printLine(p)
 		}
 	} else {
 		for p := range q {
-			if *absolute {
-				fmt.Println(p)
-			} else {
-				fmt.Println(p[len(base)+1:])
-			}
+			printLine(p)
 		}
 	}
 }
