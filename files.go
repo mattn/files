@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -37,6 +38,10 @@ func filesSync(base string) chan string {
 	maxError := errors.New("Overflow max count")
 	go func() {
 		n := int64(0)
+		sep := string(os.PathSeparator)
+		if !strings.HasSuffix(base, sep) {
+			base += sep
+		}
 		err := filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
 			if info == nil {
 				return err
@@ -45,7 +50,7 @@ func filesSync(base string) chan string {
 				if ignorere.MatchString(info.Name()) {
 					return nil
 				}
-				if matchre != nil && !matchre.MatchString(path) {
+				if matchre != nil && !matchre.MatchString(info.Name()) {
 					return nil
 				}
 
