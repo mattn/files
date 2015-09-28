@@ -177,6 +177,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	sep := string(os.PathSeparator)
+	if !strings.HasSuffix(base, sep) {
+		base += sep
+	}
+
 	if *maxfiles > 0 {
 		maxcount = *maxfiles
 	}
@@ -196,7 +201,7 @@ func main() {
 			}
 		} else {
 			return func(s string) {
-				fmt.Println(s[len(base)+1:])
+				fmt.Println(s[len(base):])
 			}
 		}
 	}()
@@ -207,7 +212,7 @@ func main() {
 		}
 		sort.Strings(fs)
 		for _, p := range fs {
-			printLine(p)
+			fmt.Println(p[len(base)+1:])
 		}
 	} else {
 		for p := range q {
