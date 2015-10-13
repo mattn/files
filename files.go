@@ -171,19 +171,15 @@ func main() {
 		base = flag.Arg(0)
 	}
 
-	base, err = filepath.Abs(base)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-
-	sep := string(os.PathSeparator)
-	if !strings.HasSuffix(base, sep) {
-		base += sep
-	}
-
 	if *maxfiles > 0 {
 		maxcount = *maxfiles
+	}
+
+	left := base
+	if *absolute {
+		left, err = filepath.Abs(base)
+		left = filepath.Dir(left)
+
 	}
 
 	var q chan string
@@ -194,37 +190,29 @@ func main() {
 		q = filesSync(base)
 	}
 
-	cwd, err := os.Getwd()
-	if err == nil && strings.HasPrefix(base, cwd) {
-		if !strings.HasSuffix(cwd, `\`) {
-			cwd += `\`
-		}
-		base = cwd
-	}
-
 	printLine := func() func(string) {
 		if *absolute {
 			return func(s string) {
-				fmt.Println(s)
+				fmt.Println(filepath.Join(left, s))
 			}
 		} else {
 			return func(s string) {
-				fmt.Println(s[len(base):])
+				fmt.Println(s)
 			}
 		}
 	}()
 	if *fsort {
 		fs := []string{}
-		for p := range q {
-			fs = append(fs, p)
+		for s := range q {
+			fs = append(fs, s)
 		}
 		sort.Strings(fs)
-		for _, p := range fs {
-			fmt.Println(p[len(base)+1:])
+		for _, s := range fs {
+			printLine(s)
 		}
 	} else {
-		for p := range q {
-			printLine(p)
+		for s := range q {
+			printLine(s)
 		}
 	}
 }
