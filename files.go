@@ -194,6 +194,14 @@ func main() {
 		q = filesSync(base)
 	}
 
+	cwd, err := os.Getwd()
+	if err == nil && strings.HasPrefix(base, cwd) {
+		if !strings.HasSuffix(cwd, `\`) {
+			cwd += `\`
+		}
+		base = cwd
+	}
+
 	printLine := func() func(string) {
 		if *absolute {
 			return func(s string) {
