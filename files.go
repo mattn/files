@@ -177,9 +177,13 @@ func main() {
 
 	left := base
 	if *absolute {
-		left, err = filepath.Abs(base)
-		left = filepath.Dir(left)
-
+		if left, err = filepath.Abs(base); err != nil {
+			left = filepath.Dir(left)
+		}
+	} else if cwd, err := os.Getwd(); err == nil {
+		if left, err = filepath.Rel(cwd, base); err == nil {
+			base = left
+		}
 	}
 
 	var q chan string
