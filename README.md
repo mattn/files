@@ -23,7 +23,7 @@ go get github.com/mattn/files
 ### ctrlp.vim
 
 ```vim
-let g:ctrlp_user_command = 'files -p %s'
+let g:ctrlp_user_command = 'files -a %s'
 ```
 
 ## License
