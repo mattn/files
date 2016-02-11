@@ -168,7 +168,7 @@ func main() {
 	}
 	base := "."
 	if flag.NArg() > 0 {
-		base = flag.Arg(0)
+		base = filepath.FromSlash(flag.Arg(0))
 	}
 
 	if *maxfiles > 0 {
