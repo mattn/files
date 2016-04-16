@@ -195,15 +195,9 @@ func main() {
 	}
 
 	printLine := func() func(string) {
-		if *absolute {
-			if filepath.IsAbs(base) {
-				return func(s string) {
-					fmt.Println(s)
-				}
-			} else {
-				return func(s string) {
-					fmt.Println(filepath.Join(left, s))
-				}
+		if *absolute && !filepath.IsAbs(base) {
+			return func(s string) {
+				fmt.Println(filepath.Join(left, s))
 			}
 		} else {
 			return func(s string) {
