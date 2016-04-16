@@ -169,6 +169,9 @@ func main() {
 	base := "."
 	if flag.NArg() > 0 {
 		base = filepath.FromSlash(flag.Arg(0))
+		if runtime.GOOS == "windows" && base != "" && base[0] == '~' {
+			base = filepath.Join(os.Getenv("USERPROFILE"), base[1:])
+		}
 	}
 
 	if *maxfiles > 0 {
@@ -180,9 +183,11 @@ func main() {
 		if left, err = filepath.Abs(base); err != nil {
 			left = filepath.Dir(left)
 		}
-	} else if cwd, err := os.Getwd(); err == nil {
-		if left, err = filepath.Rel(cwd, base); err == nil {
-			base = left
+	} else if !filepath.IsAbs(base) {
+		if cwd, err := os.Getwd(); err == nil {
+			if left, err = filepath.Rel(cwd, base); err == nil {
+				base = left
+			}
 		}
 	}
 
