@@ -25,6 +25,8 @@ var ignorere *regexp.Regexp
 var matchre *regexp.Regexp
 var maxcount = int64(^uint64(0) >> 1)
 
+var maxError = errors.New("Overflow max count")
+
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -35,7 +37,6 @@ func env(key, def string) string {
 func filesSync(base string) chan string {
 	q := make(chan string, 20)
 
-	maxError := errors.New("Overflow max count")
 	go func() {
 		n := int64(0)
 		sep := string(os.PathSeparator)
@@ -91,6 +92,7 @@ func filesAsync(base string) chan string {
 	q := make(chan string, 20)
 	n := int64(0)
 
+	var ferr error
 	var fn func(p string)
 	fn = func(p string) {
 		defer wg.Done()
@@ -116,7 +118,7 @@ func filesAsync(base string) chan string {
 				n++
 				// This is pseudo handling because this is not atomic
 				if n > maxcount {
-					fmt.Fprintln(os.Stderr, "Overflow max count")
+					ferr = maxError
 					return
 				}
 				if *progress {
@@ -145,6 +147,9 @@ func filesAsync(base string) chan string {
 	go func() {
 		wg.Wait()
 		close(q)
+		if ferr != nil {
+			fmt.Fprintln(os.Stderr, ferr)
+		}
 	}()
 	return q
 }
