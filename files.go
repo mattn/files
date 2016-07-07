@@ -13,19 +13,22 @@ import (
 	"sync"
 )
 
-var ignore = flag.String("i", env(`FILES_IGNORE_PATTERN`, `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`), "Ignore directory")
-var progress = flag.Bool("p", false, "Progress message")
-var async = flag.Bool("A", false, "Asynchronized find")
-var absolute = flag.Bool("a", false, "Display absolute path")
-var fsort = flag.Bool("s", false, "Sort results")
-var match = flag.String("m", "", "Display matched files")
-var maxfiles = flag.Int64("M", -1, "Max files")
+var (
+	ignore   = flag.String("i", env(`FILES_IGNORE_PATTERN`, `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`), "Ignore directory")
+	progress = flag.Bool("p", false, "Progress message")
+	async    = flag.Bool("A", false, "Asynchronized find")
+	absolute = flag.Bool("a", false, "Display absolute path")
+	fsort    = flag.Bool("s", false, "Sort results")
+	match    = flag.String("m", "", "Display matched files")
+	maxfiles = flag.Int64("M", -1, "Max files")
+)
 
-var ignorere *regexp.Regexp
-var matchre *regexp.Regexp
-var maxcount = int64(^uint64(0) >> 1)
-
-var maxError = errors.New("Overflow max count")
+var (
+	ignorere *regexp.Regexp
+	matchre  *regexp.Regexp
+	maxcount = int64(^uint64(0) >> 1)
+	maxError = errors.New("Overflow max count")
+)
 
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
