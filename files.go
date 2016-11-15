@@ -14,13 +14,14 @@ import (
 )
 
 var (
-	ignore   = flag.String("i", env(`FILES_IGNORE_PATTERN`, `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`), "Ignore directory")
-	progress = flag.Bool("p", false, "Progress message")
-	async    = flag.Bool("A", false, "Asynchronized find")
-	absolute = flag.Bool("a", false, "Display absolute path")
-	fsort    = flag.Bool("s", false, "Sort results")
-	match    = flag.String("m", "", "Display matched files")
-	maxfiles = flag.Int64("M", -1, "Max files")
+	ignore        = flag.String("i", env(`FILES_IGNORE_PATTERN`, `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`), "Ignore directory")
+	progress      = flag.Bool("p", false, "Progress message")
+	async         = flag.Bool("A", false, "Asynchronized find")
+	absolute      = flag.Bool("a", false, "Display absolute path")
+	fsort         = flag.Bool("s", false, "Sort results")
+	match         = flag.String("m", "", "Display matched files")
+	maxfiles      = flag.Int64("M", -1, "Max files")
+	directoryOnly = flag.Bool("d", false, "Directory only")
 )
 
 var (
@@ -46,31 +47,46 @@ func filesSync(base string) chan string {
 		if !strings.HasSuffix(base, sep) {
 			base += sep
 		}
+		processMatch := func(path string, info os.FileInfo) error {
+			if matchre != nil && !matchre.MatchString(info.Name()) {
+				return nil
+			}
+
+			n++
+			if n > maxcount {
+				return maxError
+			}
+			if *progress {
+				if n%10 == 0 {
+					fmt.Fprintf(os.Stderr, "\r%d            \r", n)
+				}
+			}
+			q <- filepath.ToSlash(path)
+
+			return nil
+		}
+
 		err := filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
 			if info == nil {
 				return err
 			}
-			if !info.IsDir() {
-				if ignorere.MatchString(info.Name()) {
-					return nil
-				}
-				if matchre != nil && !matchre.MatchString(info.Name()) {
-					return nil
-				}
-
-				n++
-				if n > maxcount {
-					return maxError
-				}
-				if *progress {
-					if n%10 == 0 {
-						fmt.Fprintf(os.Stderr, "\r%d            \r", n)
+			if *directoryOnly {
+				if info.IsDir() {
+					if ignorere.MatchString(info.Name()) {
+						return filepath.SkipDir
 					}
+					return processMatch(path, info)
 				}
-				q <- filepath.ToSlash(path)
 			} else {
-				if ignorere.MatchString(info.Name()) {
-					return filepath.SkipDir
+				if !info.IsDir() {
+					if ignorere.MatchString(info.Name()) {
+						return nil
+					}
+					return processMatch(path, info)
+				} else {
+					if ignorere.MatchString(info.Name()) {
+						return filepath.SkipDir
+					}
 				}
 			}
 			return nil
@@ -110,26 +126,44 @@ func filesAsync(base string) chan string {
 		if err != nil {
 			return
 		}
+
+		processMatch := func(p string, fi os.FileInfo) error {
+			n++
+			// This is pseudo handling because this is not atomic
+			if n > maxcount {
+				return maxError
+			}
+			if *progress {
+				if n%10 == 0 {
+					fmt.Fprintf(os.Stderr, "\r%d            \r", n)
+				}
+			}
+			q <- filepath.ToSlash(filepath.Join(p, fi.Name()))
+
+			return nil
+		}
+
 		for _, fi := range fis {
 			if ignorere.MatchString(fi.Name()) {
 				continue
 			}
-			if fi.IsDir() {
-				wg.Add(1)
-				go fn(filepath.Join(p, fi.Name()))
-			} else {
-				n++
-				// This is pseudo handling because this is not atomic
-				if n > maxcount {
-					ferr = maxError
-					return
-				}
-				if *progress {
-					if n%10 == 0 {
-						fmt.Fprintf(os.Stderr, "\r%d            \r", n)
+			if *directoryOnly {
+				if fi.IsDir() {
+					wg.Add(1)
+					go fn(filepath.Join(p, fi.Name()))
+					if ferr = processMatch(p, fi); ferr != nil {
+						return
 					}
 				}
-				q <- filepath.ToSlash(filepath.Join(p, fi.Name()))
+			} else {
+				if fi.IsDir() {
+					wg.Add(1)
+					go fn(filepath.Join(p, fi.Name()))
+				} else {
+					if ferr = processMatch(p, fi); ferr != nil {
+						return
+					}
+				}
 			}
 		}
 	}
