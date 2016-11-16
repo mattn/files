@@ -66,31 +66,40 @@ func filesSync(base string) chan string {
 			return nil
 		}
 
-		err := filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
-			if info == nil {
-				return err
-			}
-			if *directoryOnly {
-				if info.IsDir() {
-					if ignorere.MatchString(info.Name()) {
+		var err error
+		if *directoryOnly {
+			err = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
+				if info == nil {
+					return err
+				}
+				name := info.Name()
+				if info.IsDir() && name != "." {
+					if ignorere.MatchString(name) {
 						return filepath.SkipDir
 					}
 					return processMatch(path, info)
 				}
-			} else {
+				return nil
+			})
+		} else {
+			err = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
+				if info == nil {
+					return err
+				}
+				name := info.Name()
 				if !info.IsDir() {
-					if ignorere.MatchString(info.Name()) {
+					if ignorere.MatchString(name) {
 						return nil
 					}
 					return processMatch(path, info)
 				} else {
-					if ignorere.MatchString(info.Name()) {
+					if ignorere.MatchString(name) {
 						return filepath.SkipDir
 					}
 				}
-			}
-			return nil
-		})
+				return nil
+			})
+		}
 
 		if err != nil && err != maxError {
 			fmt.Fprintln(os.Stderr, err)
