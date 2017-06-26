@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 var (
@@ -114,6 +115,8 @@ func filesSync(base string) chan string {
 
 func filesAsync(base string) chan string {
 	wg := new(sync.WaitGroup)
+	maxgo := int64(runtime.NumCPU())
+	var mutex sync.Mutex
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
@@ -121,9 +124,24 @@ func filesAsync(base string) chan string {
 	n := int64(0)
 
 	var ferr error
+
 	var fn func(p string)
+	spawn := func(base string) {
+		atomic.AddInt64(&maxgo, -1)
+		if maxgo == 0 {
+			mutex.Lock()
+		}
+		wg.Add(1)
+		go fn(base)
+	}
 	fn = func(p string) {
-		defer wg.Done()
+		defer func() {
+			wg.Done()
+			if maxgo == 0 {
+				mutex.Unlock()
+			}
+			atomic.AddInt64(&maxgo, 1)
+		}()
 
 		f, err := os.Open(p)
 		if err != nil {
@@ -137,7 +155,7 @@ func filesAsync(base string) chan string {
 		}
 
 		processMatch := func(p string, fi os.FileInfo) error {
-			n++
+			atomic.AddInt64(&n, 1)
 			// This is pseudo handling because this is not atomic
 			if n > maxcount {
 				return maxError
@@ -158,16 +176,14 @@ func filesAsync(base string) chan string {
 			}
 			if *directoryOnly {
 				if fi.IsDir() {
-					wg.Add(1)
-					go fn(filepath.Join(p, fi.Name()))
+					spawn(filepath.Join(p, fi.Name()))
 					if ferr = processMatch(p, fi); ferr != nil {
 						return
 					}
 				}
 			} else {
 				if fi.IsDir() {
-					wg.Add(1)
-					go fn(filepath.Join(p, fi.Name()))
+					spawn(filepath.Join(p, fi.Name()))
 				} else {
 					if ferr = processMatch(p, fi); ferr != nil {
 						return
@@ -187,8 +203,7 @@ func filesAsync(base string) chan string {
 		os.Exit(1)
 	}
 
-	wg.Add(1)
-	go fn(base)
+	spawn(base)
 
 	go func() {
 		wg.Wait()
