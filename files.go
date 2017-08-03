@@ -137,10 +137,10 @@ func filesAsync(base string) chan string {
 	fn = func(p string) {
 		defer func() {
 			wg.Done()
-			if maxgo == 0 {
+			atomic.AddInt64(&maxgo, 1)
+			if maxgo == 1 {
 				mutex.Unlock()
 			}
-			atomic.AddInt64(&maxgo, 1)
 		}()
 
 		f, err := os.Open(p)
