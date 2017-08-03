@@ -16,6 +16,7 @@ import (
 
 var (
 	ignore        = flag.String("i", env(`FILES_IGNORE_PATTERN`, `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`), "Ignore directory")
+	ignoreenv     = flag.String("I", "", "Custom environment key for ignore")
 	progress      = flag.Bool("p", false, "Progress message")
 	async         = flag.Bool("A", false, "Asynchronized find")
 	absolute      = flag.Bool("a", false, "Display absolute path")
@@ -226,6 +227,9 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	}
+	if *ignoreenv != "" {
+		*ignore = os.Getenv(*ignoreenv)
 	}
 	ignorere, err = regexp.Compile(*ignore)
 	if err != nil {
