@@ -272,11 +272,15 @@ func main() {
 	printLine := func() func(string) {
 		if *absolute && !filepath.IsAbs(base) {
 			return func(s string) {
-				fmt.Println(filepath.Join(left, s))
+				if _, err := os.Stdout.Write([]byte(filepath.Join(left, s) + "\n")); err != nil {
+					os.Exit(2)
+				}
 			}
 		} else {
 			return func(s string) {
-				fmt.Println(s)
+				if _, err := os.Stdout.Write([]byte(s + "\n")); err != nil {
+					os.Exit(2)
+				}
 			}
 		}
 	}()
