@@ -17,6 +17,7 @@ import (
 var (
 	ignore        = flag.String("i", env(`FILES_IGNORE_PATTERN`, `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`), "Ignore directory")
 	ignoreenv     = flag.String("I", "", "Custom environment key for ignore")
+	hidden        = flag.Bool("H", false, "Ignore hidden")
 	progress      = flag.Bool("p", false, "Progress message")
 	async         = flag.Bool("A", false, "Asynchronized find")
 	absolute      = flag.Bool("a", false, "Display absolute path")
@@ -74,6 +75,9 @@ func filesSync(base string) chan string {
 				if info == nil {
 					return err
 				}
+				if *hidden && path[0] == '.' {
+					return nil
+				}
 				name := info.Name()
 				if info.IsDir() && name != "." {
 					if ignorere.MatchString(name) {
@@ -87,6 +91,9 @@ func filesSync(base string) chan string {
 			err = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
 				if info == nil {
 					return err
+				}
+				if *hidden && path[0] == '.' {
+					return nil
 				}
 				name := info.Name()
 				if !info.IsDir() {
