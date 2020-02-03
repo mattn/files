@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"sync"
-	"sync/atomic"
+
+	"github.com/saracen/walker"
 )
 
 var (
@@ -70,45 +70,41 @@ func filesSync(base string) chan string {
 		}
 
 		var err error
+		var fn func(path string, info os.FileInfo, err error) error
 		if *directoryOnly {
-			err = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
-				if info == nil {
-					return err
-				}
-				if *hidden && path[0] == '.' {
-					return nil
-				}
-				name := info.Name()
-				if info.IsDir() && name != "." {
-					if ignorere.MatchString(name) {
+			fn = func(path string, info os.FileInfo, err error) error {
+				path = filepath.Clean(path)
+				if path != "." {
+					if *hidden && filepath.Base(path)[0] == '.' {
 						return filepath.SkipDir
 					}
-					return processMatch(path, info)
-				}
-				return nil
-			})
-		} else {
-			err = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
-				if info == nil {
-					return err
-				}
-				if *hidden && path[0] == '.' {
-					return nil
-				}
-				name := info.Name()
-				if !info.IsDir() {
-					if ignorere.MatchString(name) {
-						return nil
+					if info.IsDir() {
+						if ignorere.MatchString(path) {
+							return filepath.SkipDir
+						}
+						return processMatch(path, info)
 					}
-					return processMatch(path, info)
-				}
-				if ignorere.MatchString(name) {
-					return processMatch(path, info)
 				}
 				return nil
-			})
+			}
+		} else {
+			fn = func(path string, info os.FileInfo, err error) error {
+				path = filepath.Clean(path)
+				if path != "." {
+					if *hidden && filepath.Base(path)[0] == '.' {
+						return filepath.SkipDir
+					}
+					if !info.IsDir() {
+						if ignorere.MatchString(path) {
+							return filepath.SkipDir
+						}
+						return processMatch(path, info)
+					}
+				}
+				return nil
+			}
 		}
-
+		err = filepath.Walk(base, fn)
 		if err != nil && err != maxError {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -121,49 +117,20 @@ func filesSync(base string) chan string {
 }
 
 func filesAsync(base string) chan string {
-	wg := new(sync.WaitGroup)
-	maxgo := int64(runtime.NumCPU())
-	var mutex sync.Mutex
-
-	runtime.GOMAXPROCS(runtime.NumCPU())
-
 	q := make(chan string, 20)
-	n := int64(0)
 
-	var ferr error
-
-	var fn func(p string)
-	spawn := func(base string) {
-		atomic.AddInt64(&maxgo, -1)
-		if maxgo == 0 {
-			mutex.Lock()
+	go func() {
+		n := int64(0)
+		sep := string(os.PathSeparator)
+		if !strings.HasSuffix(base, sep) {
+			base += sep
 		}
-		wg.Add(1)
-		go fn(base)
-	}
-	fn = func(p string) {
-		defer func() {
-			wg.Done()
-			atomic.AddInt64(&maxgo, 1)
-			if maxgo == 1 {
-				mutex.Unlock()
+		processMatch := func(path string, info os.FileInfo) error {
+			if matchre != nil && !matchre.MatchString(info.Name()) {
+				return nil
 			}
-		}()
 
-		f, err := os.Open(p)
-		if err != nil {
-			return
-		}
-		defer f.Close()
-
-		fis, err := f.Readdir(-1)
-		if err != nil {
-			return
-		}
-
-		processMatch := func(p string, fi os.FileInfo) error {
-			atomic.AddInt64(&n, 1)
-			// This is pseudo handling because this is not atomic
+			n++
 			if n > maxcount {
 				return maxError
 			}
@@ -172,53 +139,59 @@ func filesAsync(base string) chan string {
 					fmt.Fprintf(os.Stderr, "\r%d            \r", n)
 				}
 			}
-			q <- filepath.ToSlash(filepath.Join(p, fi.Name()))
+			q <- filepath.ToSlash(path)
 
 			return nil
 		}
 
-		for _, fi := range fis {
-			if ignorere.MatchString(fi.Name()) {
-				continue
+		var err error
+		var fn func(path string, info os.FileInfo) error
+		if *directoryOnly {
+			fn = func(path string, info os.FileInfo) error {
+				path = filepath.Clean(path)
+				if path != "." {
+					if *hidden && filepath.Base(path)[0] == '.' {
+						return filepath.SkipDir
+					}
+					if info.IsDir() {
+						if ignorere.MatchString(path) {
+							return filepath.SkipDir
+						}
+						return processMatch(path, info)
+					}
+				}
+				return nil
 			}
-			if *directoryOnly {
-				if fi.IsDir() {
-					spawn(filepath.Join(p, fi.Name()))
-					if ferr = processMatch(p, fi); ferr != nil {
-						return
+		} else {
+			fn = func(path string, info os.FileInfo) error {
+				path = filepath.Clean(path)
+				if path != "." {
+					if *hidden && filepath.Base(path)[0] == '.' {
+						return filepath.SkipDir
+					}
+					if !info.IsDir() {
+						if ignorere.MatchString(path) {
+							return filepath.SkipDir
+						}
+						return processMatch(path, info)
 					}
 				}
-			} else {
-				if fi.IsDir() {
-					spawn(filepath.Join(p, fi.Name()))
-				} else {
-					if ferr = processMatch(p, fi); ferr != nil {
-						return
-					}
-				}
+				return nil
 			}
 		}
-	}
+		cb := walker.WithErrorCallback(func(pathname string, err error) error {
+			return nil
+		})
+		err = walker.Walk(base, fn, cb)
 
-	fi, err := os.Lstat(base)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	if !fi.IsDir() {
-		fmt.Fprintf(os.Stderr, "%q is not a directory\n", fi.Name())
-		os.Exit(1)
-	}
+		if err != nil && err != maxError {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 
-	spawn(base)
-
-	go func() {
-		wg.Wait()
 		close(q)
-		if ferr != nil {
-			fmt.Fprintln(os.Stderr, ferr)
-		}
 	}()
+
 	return q
 }
 
