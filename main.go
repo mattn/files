@@ -70,8 +70,9 @@ func filesSync(base string) chan string {
 		}
 
 		var err error
+		var fn func(path string, info os.FileInfo, err error) error
 		if *directoryOnly {
-			err = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
+			fn = func(path string, info os.FileInfo, err error) error {
 				path = filepath.Clean(path)
 				if path != "." {
 					if *hidden && filepath.Base(path)[0] == '.' {
@@ -85,9 +86,9 @@ func filesSync(base string) chan string {
 					}
 				}
 				return nil
-			})
+			}
 		} else {
-			err = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
+			fn = func(path string, info os.FileInfo, err error) error {
 				path = filepath.Clean(path)
 				if path != "." {
 					if *hidden && filepath.Base(path)[0] == '.' {
@@ -101,9 +102,9 @@ func filesSync(base string) chan string {
 					}
 				}
 				return nil
-			})
+			}
 		}
-
+		err = filepath.Walk(base, fn)
 		if err != nil && err != maxError {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -144,8 +145,9 @@ func filesAsync(base string) chan string {
 		}
 
 		var err error
+		var fn func(path string, info os.FileInfo) error
 		if *directoryOnly {
-			err = walker.Walk(base, func(path string, info os.FileInfo) error {
+			fn = func(path string, info os.FileInfo) error {
 				path = filepath.Clean(path)
 				if path != "." {
 					if *hidden && filepath.Base(path)[0] == '.' {
@@ -159,9 +161,9 @@ func filesAsync(base string) chan string {
 					}
 				}
 				return nil
-			})
+			}
 		} else {
-			err = walker.Walk(base, func(path string, info os.FileInfo) error {
+			fn = func(path string, info os.FileInfo) error {
 				path = filepath.Clean(path)
 				if path != "." {
 					if *hidden && filepath.Base(path)[0] == '.' {
@@ -175,8 +177,12 @@ func filesAsync(base string) chan string {
 					}
 				}
 				return nil
-			})
+			}
 		}
+		cb := walker.WithErrorCallback(func(pathname string, err error) error {
+			return nil
+		})
+		err = walker.Walk(base, fn, cb)
 
 		if err != nil && err != maxError {
 			fmt.Fprintln(os.Stderr, err)
