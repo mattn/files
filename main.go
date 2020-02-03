@@ -95,16 +95,33 @@ func files(base string) chan string {
 		defer close(q)
 
 		n := int64(0)
-		processMatch := func(path string, info os.FileInfo) error {
-			if matchre != nil && !matchre.MatchString(info.Name()) {
+
+		var processMatch func(path string, info os.FileInfo) error
+		if maxcount != -1 {
+			processMatch = func(path string, info os.FileInfo) error {
+				if matchre != nil && !matchre.MatchString(info.Name()) {
+					return nil
+				}
+				n++
+				if n > maxcount {
+					return maxError
+				}
+				q <- filepath.ToSlash(path)
 				return nil
 			}
-			n++
-			if n > maxcount {
-				return maxError
+		} else if matchre != nil {
+			processMatch = func(path string, info os.FileInfo) error {
+				if matchre != nil && !matchre.MatchString(info.Name()) {
+					return nil
+				}
+				q <- filepath.ToSlash(path)
+				return nil
 			}
-			q <- filepath.ToSlash(path)
-			return nil
+		} else {
+			processMatch = func(path string, info os.FileInfo) error {
+				q <- filepath.ToSlash(path)
+				return nil
+			}
 		}
 
 		var err error
