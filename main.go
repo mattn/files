@@ -18,7 +18,6 @@ var (
 	ignore        = flag.String("i", env(`FILES_IGNORE_PATTERN`, `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`), "Ignore directory")
 	ignoreenv     = flag.String("I", "", "Custom environment key for ignore")
 	hidden        = flag.Bool("H", true, "Ignore hidden")
-	progress      = flag.Bool("p", false, "Progress message")
 	async         = flag.Bool("A", false, "Asynchronized find")
 	absolute      = flag.Bool("a", false, "Display absolute path")
 	fsort         = flag.Bool("s", false, "Sort results")
@@ -41,167 +40,82 @@ func env(key, def string) string {
 	return def
 }
 
-func filesSync(base string) chan string {
-	q := make(chan string, 20)
-
-	go func() {
-		n := int64(0)
-		sep := string(os.PathSeparator)
-		if !strings.HasSuffix(base, sep) {
-			base += sep
-		}
-		processMatch := func(path string, info os.FileInfo) error {
-			if matchre != nil && !matchre.MatchString(info.Name()) {
+func makeFunc(processMatch func(path string, info os.FileInfo) error) func(path string, info os.FileInfo) error {
+	if *directoryOnly {
+		return func(path string, info os.FileInfo) error {
+			path = filepath.Clean(path)
+			if path == "." {
 				return nil
 			}
-
-			n++
-			if n > maxcount {
-				return maxError
-			}
-			if *progress {
-				if n%10 == 0 {
-					fmt.Fprintf(os.Stderr, "\r%d            \r", n)
+			if *hidden && filepath.Base(path)[0] == '.' {
+				if info.IsDir() {
+					return filepath.SkipDir
 				}
+				return nil
 			}
-			q <- filepath.ToSlash(path)
-
+			if info.IsDir() {
+				if ignorere.MatchString(path) {
+					return filepath.SkipDir
+				}
+				return processMatch(path, info)
+			}
 			return nil
 		}
-
-		var err error
-		var fn func(path string, info os.FileInfo, err error) error
-		if *directoryOnly {
-			fn = func(path string, info os.FileInfo, err error) error {
-				path = filepath.Clean(path)
-				if path != "." {
-					if *hidden && filepath.Base(path)[0] == '.' {
-						if info.IsDir() {
-							return filepath.SkipDir
-						}
-						return nil
-					}
-					if info.IsDir() {
-						if ignorere.MatchString(path) {
-							return filepath.SkipDir
-						}
-						return processMatch(path, info)
-					}
+	} else {
+		return func(path string, info os.FileInfo) error {
+			path = filepath.Clean(path)
+			if path == "." {
+				return nil
+			}
+			if *hidden && filepath.Base(path)[0] == '.' {
+				if info.IsDir() {
+					return filepath.SkipDir
 				}
 				return nil
 			}
-		} else {
-			fn = func(path string, info os.FileInfo, err error) error {
-				path = filepath.Clean(path)
-				if path != "." {
-					if *hidden && filepath.Base(path)[0] == '.' {
-						if info.IsDir() {
-							return filepath.SkipDir
-						}
-						return nil
-					}
-					if !info.IsDir() {
-						if ignorere.MatchString(path) {
-							return filepath.SkipDir
-						}
-						return processMatch(path, info)
-					}
+			if !info.IsDir() {
+				if ignorere.MatchString(path) {
+					return filepath.SkipDir
 				}
-				return nil
+				return processMatch(path, info)
 			}
+			return nil
 		}
-		err = filepath.Walk(base, fn)
-		if err != nil && err != maxError {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-
-		close(q)
-	}()
-
-	return q
+	}
 }
 
-func filesAsync(base string) chan string {
+func files(base string) chan string {
 	q := make(chan string, 20)
 
+	sep := string(os.PathSeparator)
+	if !strings.HasSuffix(base, sep) {
+		base += sep
+	}
 	go func() {
+		defer close(q)
+
 		n := int64(0)
-		sep := string(os.PathSeparator)
-		if !strings.HasSuffix(base, sep) {
-			base += sep
-		}
 		processMatch := func(path string, info os.FileInfo) error {
 			if matchre != nil && !matchre.MatchString(info.Name()) {
 				return nil
 			}
-
 			n++
 			if n > maxcount {
 				return maxError
 			}
-			if *progress {
-				if n%10 == 0 {
-					fmt.Fprintf(os.Stderr, "\r%d            \r", n)
-				}
-			}
 			q <- filepath.ToSlash(path)
-
 			return nil
 		}
 
 		var err error
-		var fn func(path string, info os.FileInfo) error
-		if *directoryOnly {
-			fn = func(path string, info os.FileInfo) error {
-				path = filepath.Clean(path)
-				if path != "." {
-					if *hidden && filepath.Base(path)[0] == '.' {
-						if info.IsDir() {
-							return filepath.SkipDir
-						}
-						return nil
-					}
-					if info.IsDir() {
-						if ignorere.MatchString(path) {
-							return filepath.SkipDir
-						}
-						return processMatch(path, info)
-					}
-				}
-				return nil
-			}
-		} else {
-			fn = func(path string, info os.FileInfo) error {
-				path = filepath.Clean(path)
-				if path != "." {
-					if *hidden && filepath.Base(path)[0] == '.' {
-						if info.IsDir() {
-							return filepath.SkipDir
-						}
-						return nil
-					}
-					if !info.IsDir() {
-						if ignorere.MatchString(path) {
-							return filepath.SkipDir
-						}
-						return processMatch(path, info)
-					}
-				}
-				return nil
-			}
-		}
 		cb := walker.WithErrorCallback(func(pathname string, err error) error {
 			return nil
 		})
-		err = walker.Walk(base, fn, cb)
-
+		err = walker.Walk(base, makeFunc(processMatch), cb)
 		if err != nil && err != maxError {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-
-		close(q)
 	}()
 
 	return q
@@ -252,29 +166,22 @@ func main() {
 		}
 	}
 
-	var q chan string
+	q := files(base)
 
-	if *async {
-		q = filesAsync(base)
-	} else {
-		q = filesSync(base)
-	}
-
-	printLine := func() func(string) {
-		if *absolute && !filepath.IsAbs(base) {
-			return func(s string) {
-				if _, err := os.Stdout.Write([]byte(filepath.Join(left, s) + "\n")); err != nil {
-					os.Exit(2)
-				}
-			}
-		} else {
-			return func(s string) {
-				if _, err := os.Stdout.Write([]byte(s + "\n")); err != nil {
-					os.Exit(2)
-				}
+	var printLine func(string)
+	if *absolute && !filepath.IsAbs(base) {
+		printLine = func(s string) {
+			if _, err := os.Stdout.Write([]byte(filepath.Join(left, s) + "\n")); err != nil {
+				os.Exit(2)
 			}
 		}
-	}()
+	} else {
+		printLine = func(s string) {
+			if _, err := os.Stdout.Write([]byte(s + "\n")); err != nil {
+				os.Exit(2)
+			}
+		}
+	}
 	if *fsort {
 		fs := []string{}
 		for s := range q {
