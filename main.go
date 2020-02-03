@@ -72,38 +72,33 @@ func filesSync(base string) chan string {
 		var err error
 		if *directoryOnly {
 			err = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
-				if info == nil {
-					return err
-				}
-				if *hidden && path[0] == '.' {
-					return nil
-				}
-				name := info.Name()
-				if info.IsDir() && name != "." {
-					if ignorere.MatchString(name) {
+				path = filepath.Clean(path)
+				if path != "." {
+					if *hidden && filepath.Base(path)[0] == '.' {
 						return filepath.SkipDir
 					}
-					return processMatch(path, info)
+					if info.IsDir() {
+						if ignorere.MatchString(path) {
+							return filepath.SkipDir
+						}
+						return processMatch(path, info)
+					}
 				}
 				return nil
 			})
 		} else {
 			err = filepath.Walk(base, func(path string, info os.FileInfo, err error) error {
-				if info == nil {
-					return err
-				}
-				if *hidden && path[0] == '.' {
-					return nil
-				}
-				name := info.Name()
-				if !info.IsDir() {
-					if ignorere.MatchString(name) {
-						return nil
+				path = filepath.Clean(path)
+				if path != "." {
+					if *hidden && filepath.Base(path)[0] == '.' {
+						return filepath.SkipDir
 					}
-					return processMatch(path, info)
-				}
-				if ignorere.MatchString(name) {
-					return processMatch(path, info)
+					if !info.IsDir() {
+						if ignorere.MatchString(path) {
+							return filepath.SkipDir
+						}
+						return processMatch(path, info)
+					}
 				}
 				return nil
 			})
