@@ -76,7 +76,10 @@ func filesSync(base string) chan string {
 				path = filepath.Clean(path)
 				if path != "." {
 					if *hidden && filepath.Base(path)[0] == '.' {
-						return filepath.SkipDir
+						if info.IsDir() {
+							return filepath.SkipDir
+						}
+						return nil
 					}
 					if info.IsDir() {
 						if ignorere.MatchString(path) {
@@ -92,7 +95,10 @@ func filesSync(base string) chan string {
 				path = filepath.Clean(path)
 				if path != "." {
 					if *hidden && filepath.Base(path)[0] == '.' {
-						return filepath.SkipDir
+						if info.IsDir() {
+							return filepath.SkipDir
+						}
+						return nil
 					}
 					if !info.IsDir() {
 						if ignorere.MatchString(path) {
@@ -151,7 +157,10 @@ func filesAsync(base string) chan string {
 				path = filepath.Clean(path)
 				if path != "." {
 					if *hidden && filepath.Base(path)[0] == '.' {
-						return filepath.SkipDir
+						if info.IsDir() {
+							return filepath.SkipDir
+						}
+						return nil
 					}
 					if info.IsDir() {
 						if ignorere.MatchString(path) {
@@ -167,7 +176,10 @@ func filesAsync(base string) chan string {
 				path = filepath.Clean(path)
 				if path != "." {
 					if *hidden && filepath.Base(path)[0] == '.' {
-						return filepath.SkipDir
+						if info.IsDir() {
+							return filepath.SkipDir
+						}
+						return nil
 					}
 					if !info.IsDir() {
 						if ignorere.MatchString(path) {
