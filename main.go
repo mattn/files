@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -22,15 +21,12 @@ var (
 	absolute      = flag.Bool("a", false, "Display absolute path")
 	fsort         = flag.Bool("s", false, "Sort results")
 	match         = flag.String("m", "", "Display matched files")
-	maxfiles      = flag.Int64("M", -1, "Max files")
 	directoryOnly = flag.Bool("d", false, "Directory only")
 )
 
 var (
 	ignorere *regexp.Regexp
 	matchre  *regexp.Regexp
-	maxcount = int64(^uint64(0) >> 1)
-	maxError = errors.New("Overflow max count")
 )
 
 func env(key, def string) string {
@@ -91,45 +87,30 @@ func files(base string) chan string {
 	if !strings.HasSuffix(base, sep) {
 		base += sep
 	}
+
+	var processMatch func(path string, info os.FileInfo) error
+	if matchre != nil {
+		processMatch = func(path string, info os.FileInfo) error {
+			if matchre != nil && !matchre.MatchString(info.Name()) {
+				return nil
+			}
+			q <- filepath.ToSlash(path)
+			return nil
+		}
+	} else {
+		processMatch = func(path string, info os.FileInfo) error {
+			q <- filepath.ToSlash(path)
+			return nil
+		}
+	}
+	cb := walker.WithErrorCallback(func(pathname string, err error) error {
+		return nil
+	})
+
 	go func() {
 		defer close(q)
-
-		n := int64(0)
-
-		var processMatch func(path string, info os.FileInfo) error
-		if maxcount != -1 {
-			processMatch = func(path string, info os.FileInfo) error {
-				if matchre != nil && !matchre.MatchString(info.Name()) {
-					return nil
-				}
-				n++
-				if n > maxcount {
-					return maxError
-				}
-				q <- filepath.ToSlash(path)
-				return nil
-			}
-		} else if matchre != nil {
-			processMatch = func(path string, info os.FileInfo) error {
-				if matchre != nil && !matchre.MatchString(info.Name()) {
-					return nil
-				}
-				q <- filepath.ToSlash(path)
-				return nil
-			}
-		} else {
-			processMatch = func(path string, info os.FileInfo) error {
-				q <- filepath.ToSlash(path)
-				return nil
-			}
-		}
-
-		var err error
-		cb := walker.WithErrorCallback(func(pathname string, err error) error {
-			return nil
-		})
-		err = walker.Walk(base, makeFunc(processMatch), cb)
-		if err != nil && err != maxError {
+		err := walker.Walk(base, makeFunc(processMatch), cb)
+		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -164,10 +145,6 @@ func main() {
 		if runtime.GOOS == "windows" && base != "" && base[0] == '~' {
 			base = filepath.Join(os.Getenv("USERPROFILE"), base[1:])
 		}
-	}
-
-	if *maxfiles > 0 {
-		maxcount = *maxfiles
 	}
 
 	left := base
