@@ -152,39 +152,32 @@ func filesAsync(base string) chan string {
 		if *directoryOnly {
 			err = walker.Walk(base, func(path string, info os.FileInfo) error {
 				path = filepath.Clean(path)
-				if path == base || info == nil {
-					return nil
-				}
-				if *hidden && path[0] == '.' {
-					return nil
-				}
-				name := info.Name()
-				if info.IsDir() && name != "." {
-					if ignorere.MatchString(name) {
+				if path != "." {
+					if *hidden && filepath.Base(path)[0] == '.' {
 						return filepath.SkipDir
 					}
-					return processMatch(path, info)
+					if info.IsDir() {
+						if ignorere.MatchString(path) {
+							return filepath.SkipDir
+						}
+						return processMatch(path, info)
+					}
 				}
 				return nil
 			})
 		} else {
 			err = walker.Walk(base, func(path string, info os.FileInfo) error {
 				path = filepath.Clean(path)
-				if path == base || info == nil {
-					return nil
-				}
-				if *hidden && path[0] == '.' {
-					return nil
-				}
-				name := info.Name()
-				if !info.IsDir() {
-					if ignorere.MatchString(name) {
-						return nil
+				if path != "." {
+					if *hidden && filepath.Base(path)[0] == '.' {
+						return filepath.SkipDir
 					}
-					return processMatch(path, info)
-				}
-				if ignorere.MatchString(name) {
-					return processMatch(path, info)
+					if !info.IsDir() {
+						if ignorere.MatchString(path) {
+							return filepath.SkipDir
+						}
+						return processMatch(path, info)
+					}
 				}
 				return nil
 			})
