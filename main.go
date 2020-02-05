@@ -155,8 +155,6 @@ func (cfg *config) doPrint(q chan string) {
 }
 
 func run() int {
-	flag.Parse()
-
 	var cfg config
 	flag.StringVar(&cfg.ignore, "i", env(`FILES_IGNORE_PATTERN`, `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`), "Ignore directory")
 	flag.StringVar(&cfg.ignoreenv, "I", "", "Custom environment key for ignore")
@@ -165,6 +163,7 @@ func run() int {
 	flag.BoolVar(&cfg.fsort, "s", false, "Sort results")
 	flag.StringVar(&cfg.match, "m", "", "Display matched files")
 	flag.BoolVar(&cfg.directoryOnly, "d", false, "Directory only")
+	flag.Parse()
 
 	var err error
 
