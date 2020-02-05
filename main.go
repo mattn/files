@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -13,16 +15,18 @@ import (
 	"github.com/saracen/walker"
 )
 
-var (
-	ignore        = flag.String("i", env(`FILES_IGNORE_PATTERN`, `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`), "Ignore directory")
-	ignoreenv     = flag.String("I", "", "Custom environment key for ignore")
-	hidden        = flag.Bool("H", true, "Ignore hidden")
-	async         = flag.Bool("A", false, "Asynchronized find")
-	absolute      = flag.Bool("a", false, "Display absolute path")
-	fsort         = flag.Bool("s", false, "Sort results")
-	match         = flag.String("m", "", "Display matched files")
-	directoryOnly = flag.Bool("d", false, "Directory only")
-)
+type config struct {
+	ignore        string
+	ignoreenv     string
+	hidden        bool
+	absolute      bool
+	fsort         bool
+	match         string
+	directoryOnly bool
+
+	base string
+	left string
+}
 
 var (
 	ignorere *regexp.Regexp
@@ -36,14 +40,16 @@ func env(key, def string) string {
 	return def
 }
 
-func makeFunc(processMatch func(path string, info os.FileInfo) error) func(path string, info os.FileInfo) error {
-	if *directoryOnly {
+type walkFn func(path string, info os.FileInfo) error
+
+func makeWalkFn(cfg *config, processMatch walkFn) walkFn {
+	if cfg.directoryOnly {
 		return func(path string, info os.FileInfo) error {
 			path = filepath.Clean(path)
 			if path == "." {
 				return nil
 			}
-			if *hidden && filepath.Base(path)[0] == '.' {
+			if cfg.hidden && filepath.Base(path)[0] == '.' {
 				if info.IsDir() {
 					return filepath.SkipDir
 				}
@@ -57,98 +63,149 @@ func makeFunc(processMatch func(path string, info os.FileInfo) error) func(path 
 			}
 			return nil
 		}
-	} else {
-		return func(path string, info os.FileInfo) error {
-			path = filepath.Clean(path)
-			if path == "." {
-				return nil
-			}
-			if *hidden && filepath.Base(path)[0] == '.' {
-				if info.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if !info.IsDir() {
-				if ignorere.MatchString(path) {
-					return filepath.SkipDir
-				}
-				return processMatch(path, info)
+	}
+	return func(path string, info os.FileInfo) error {
+		path = filepath.Clean(path)
+		if path == "." {
+			return nil
+		}
+		if cfg.hidden && filepath.Base(path)[0] == '.' {
+			if info.IsDir() {
+				return filepath.SkipDir
 			}
 			return nil
 		}
+		if !info.IsDir() {
+			if ignorere.MatchString(path) {
+				return filepath.SkipDir
+			}
+			return processMatch(path, info)
+		}
+		return nil
 	}
 }
 
-func files(base string) chan string {
-	q := make(chan string, 20)
-
-	sep := string(os.PathSeparator)
-	if !strings.HasSuffix(base, sep) {
-		base += sep
-	}
-
-	var processMatch func(path string, info os.FileInfo) error
+func makeMatchFn(q chan string) walkFn {
 	if matchre != nil {
-		processMatch = func(path string, info os.FileInfo) error {
+		return func(path string, info os.FileInfo) error {
 			if matchre != nil && !matchre.MatchString(info.Name()) {
 				return nil
 			}
 			q <- filepath.ToSlash(path)
 			return nil
 		}
-	} else {
-		processMatch = func(path string, info os.FileInfo) error {
-			q <- filepath.ToSlash(path)
-			return nil
-		}
 	}
+	return func(path string, info os.FileInfo) error {
+		q <- filepath.ToSlash(path)
+		return nil
+	}
+}
+
+func files(ctx context.Context, cfg *config) chan string {
+	q := make(chan string, 20)
+
+	base := cfg.base
+	sep := string(os.PathSeparator)
+	if !strings.HasSuffix(base, sep) {
+		base += sep
+	}
+
 	cb := walker.WithErrorCallback(func(pathname string, err error) error {
 		return nil
 	})
-
 	go func() {
 		defer close(q)
-		err := walker.Walk(base, makeFunc(processMatch), cb)
+		err := walker.WalkWithContext(ctx, base, makeWalkFn(cfg, makeMatchFn(q)), cb)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	}()
-
 	return q
 }
 
-func main() {
+func makePrintFn(cfg *config) func(string) {
+	if cfg.absolute && !filepath.IsAbs(cfg.base) {
+		return func(s string) {
+			if _, err := os.Stdout.Write([]byte(filepath.Join(cfg.left, s) + "\n")); err != nil {
+				os.Exit(2)
+			}
+		}
+	}
+	return func(s string) {
+		if _, err := os.Stdout.Write([]byte(s + "\n")); err != nil {
+			os.Exit(2)
+		}
+	}
+}
+
+func (cfg *config) doPrint(q chan string) {
+	printFn := makePrintFn(cfg)
+	if cfg.fsort {
+		fs := []string{}
+		for s := range q {
+			fs = append(fs, s)
+		}
+		sort.Strings(fs)
+		for _, s := range fs {
+			printFn(s)
+		}
+	} else {
+		for s := range q {
+			printFn(s)
+		}
+	}
+}
+
+func run() int {
 	flag.Parse()
+
+	var cfg config
+	flag.StringVar(&cfg.ignore, "i", env(`FILES_IGNORE_PATTERN`, `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`), "Ignore directory")
+	flag.StringVar(&cfg.ignoreenv, "I", "", "Custom environment key for ignore")
+	flag.BoolVar(&cfg.hidden, "H", true, "Ignore hidden")
+	flag.BoolVar(&cfg.absolute, "a", false, "Display absolute path")
+	flag.BoolVar(&cfg.fsort, "s", false, "Sort results")
+	flag.StringVar(&cfg.match, "m", "", "Display matched files")
+	flag.BoolVar(&cfg.directoryOnly, "d", false, "Directory only")
 
 	var err error
 
-	if *match != "" {
-		matchre, err = regexp.Compile(*match)
+	if cfg.match != "" {
+		matchre, err = regexp.Compile(cfg.match)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	}
-	if *ignoreenv != "" {
-		*ignore = os.Getenv(*ignoreenv)
+	if cfg.ignoreenv != "" {
+		cfg.ignore = os.Getenv(cfg.ignoreenv)
 	}
-	ignorere, err = regexp.Compile(*ignore)
+	ignorere, err = regexp.Compile(cfg.ignore)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	base := "."
 	if flag.NArg() > 0 {
-		base = filepath.FromSlash(flag.Arg(0))
+		base = flag.Arg(0)
+
+		if filepath.VolumeName(base) == "" {
+			cwd, err := os.Getwd()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			base = filepath.Join(filepath.VolumeName(cwd), base)
+		}
+		base = filepath.FromSlash(filepath.Clean(base))
 		if runtime.GOOS == "windows" && base != "" && base[0] == '~' {
 			base = filepath.Join(os.Getenv("USERPROFILE"), base[1:])
 		}
 	}
 
 	left := base
-	if *absolute {
+	if cfg.absolute {
 		if left, err = filepath.Abs(base); err != nil {
 			left = filepath.Dir(left)
 		}
@@ -159,35 +216,29 @@ func main() {
 			}
 		}
 	}
+	cfg.base = base
+	cfg.left = left
 
-	q := files(base)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	var printLine func(string)
-	if *absolute && !filepath.IsAbs(base) {
-		printLine = func(s string) {
-			if _, err := os.Stdout.Write([]byte(filepath.Join(left, s) + "\n")); err != nil {
-				os.Exit(2)
-			}
-		}
-	} else {
-		printLine = func(s string) {
-			if _, err := os.Stdout.Write([]byte(s + "\n")); err != nil {
-				os.Exit(2)
-			}
-		}
+	sc := make(chan os.Signal, 1)
+	signal.Notify(sc, os.Interrupt)
+	go func() {
+		<-sc
+		cancel()
+		sc = nil
+	}()
+
+	cfg.doPrint(files(ctx, &cfg))
+
+	if sc == nil {
+		return 1
 	}
-	if *fsort {
-		fs := []string{}
-		for s := range q {
-			fs = append(fs, s)
-		}
-		sort.Strings(fs)
-		for _, s := range fs {
-			printLine(s)
-		}
-	} else {
-		for s := range q {
-			printLine(s)
-		}
-	}
+	return 0
+}
+
+func main() {
+	os.Exit(run())
+
 }
