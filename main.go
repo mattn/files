@@ -24,14 +24,11 @@ type config struct {
 	match         string
 	directoryOnly bool
 
-	base string
-	left string
-}
-
-var (
+	base     string
+	left     string
 	ignorere *regexp.Regexp
 	matchre  *regexp.Regexp
-)
+}
 
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
@@ -56,7 +53,7 @@ func makeWalkFn(cfg *config, processMatch walkFn) walkFn {
 				return nil
 			}
 			if info.IsDir() {
-				if ignorere.MatchString(path) {
+				if cfg.ignorere.MatchString(path) {
 					return filepath.SkipDir
 				}
 				return processMatch(path, info)
@@ -76,7 +73,7 @@ func makeWalkFn(cfg *config, processMatch walkFn) walkFn {
 			return nil
 		}
 		if !info.IsDir() {
-			if ignorere.MatchString(path) {
+			if cfg.ignorere.MatchString(path) {
 				return filepath.SkipDir
 			}
 			return processMatch(path, info)
@@ -85,10 +82,10 @@ func makeWalkFn(cfg *config, processMatch walkFn) walkFn {
 	}
 }
 
-func makeMatchFn(q chan string) walkFn {
-	if matchre != nil {
+func makeMatchFn(cfg *config, q chan string) walkFn {
+	if cfg.matchre != nil {
 		return func(path string, info os.FileInfo) error {
-			if matchre != nil && !matchre.MatchString(info.Name()) {
+			if !cfg.matchre.MatchString(info.Name()) {
 				return nil
 			}
 			q <- filepath.ToSlash(path)
@@ -115,7 +112,7 @@ func files(ctx context.Context, cfg *config) chan string {
 	})
 	go func() {
 		defer close(q)
-		err := walker.WalkWithContext(ctx, base, makeWalkFn(cfg, makeMatchFn(q)), cb)
+		err := walker.WalkWithContext(ctx, base, makeWalkFn(cfg, makeMatchFn(cfg, q)), cb)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -172,7 +169,7 @@ func run() int {
 	var err error
 
 	if cfg.match != "" {
-		matchre, err = regexp.Compile(cfg.match)
+		cfg.matchre, err = regexp.Compile(cfg.match)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -181,7 +178,7 @@ func run() int {
 	if cfg.ignoreenv != "" {
 		cfg.ignore = os.Getenv(cfg.ignoreenv)
 	}
-	ignorere, err = regexp.Compile(cfg.ignore)
+	cfg.ignorere, err = regexp.Compile(cfg.ignore)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
