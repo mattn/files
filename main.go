@@ -15,6 +15,12 @@ import (
 	"github.com/saracen/walker"
 )
 
+const (
+	name     = "files"
+	version  = "0.3.1"
+	revision = "HEAD"
+)
+
 type config struct {
 	ignore        string
 	ignoreenv     string
@@ -24,10 +30,11 @@ type config struct {
 	match         string
 	directoryOnly bool
 
-	base     string
-	left     string
-	ignorere *regexp.Regexp
-	matchre  *regexp.Regexp
+	base        string
+	left        string
+	ignorere    *regexp.Regexp
+	matchre     *regexp.Regexp
+	showVersion bool
 }
 
 func env(key, def string) string {
@@ -163,7 +170,13 @@ func run() int {
 	flag.BoolVar(&cfg.fsort, "s", false, "Sort results")
 	flag.StringVar(&cfg.match, "m", "", "Display matched files")
 	flag.BoolVar(&cfg.directoryOnly, "d", false, "Directory only")
+	flag.BoolVar(&cfg.showVersion, "v", false, "Show version")
 	flag.Parse()
+
+	if cfg.showVersion {
+		fmt.Fprintf(os.Stdout, "%s\n", version)
+		os.Exit(0)
+	}
 
 	var err error
 
@@ -236,5 +249,4 @@ func run() int {
 
 func main() {
 	os.Exit(run())
-
 }
