@@ -199,14 +199,6 @@ func run() int {
 	if flag.NArg() > 0 {
 		base = flag.Arg(0)
 
-		if filepath.VolumeName(base) == "" {
-			cwd, err := os.Getwd()
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
-			}
-			base = filepath.Join(filepath.VolumeName(cwd), base)
-		}
 		base = filepath.FromSlash(filepath.Clean(base))
 		if runtime.GOOS == "windows" && base != "" && base[0] == '~' {
 			base = filepath.Join(os.Getenv("USERPROFILE"), base[1:])
