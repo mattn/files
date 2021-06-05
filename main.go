@@ -46,6 +46,10 @@ func env(key, def string) string {
 
 type walkFn func(path string, info os.FileInfo) error
 
+func isHidden(cfg *config, path string) bool {
+	return cfg.hidden && cfg.base != path && filepath.Base(path)[0] == '.'
+}
+
 func makeWalkFn(cfg *config, processMatch walkFn) walkFn {
 	if cfg.directoryOnly {
 		return func(path string, info os.FileInfo) error {
@@ -53,7 +57,7 @@ func makeWalkFn(cfg *config, processMatch walkFn) walkFn {
 			if path == "." {
 				return nil
 			}
-			if cfg.hidden && filepath.Base(path)[0] == '.' {
+			if isHidden(cfg, path) {
 				if info.IsDir() {
 					return filepath.SkipDir
 				}
@@ -73,7 +77,7 @@ func makeWalkFn(cfg *config, processMatch walkFn) walkFn {
 		if path == "." {
 			return nil
 		}
-		if cfg.hidden && filepath.Base(path)[0] == '.' {
+		if isHidden(cfg, path) {
 			if info.IsDir() {
 				return filepath.SkipDir
 			}
