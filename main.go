@@ -17,7 +17,7 @@ import (
 
 const (
 	name     = "files"
-	version  = "0.3.1"
+	version  = "0.3.3"
 	revision = "HEAD"
 )
 
