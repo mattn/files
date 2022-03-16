@@ -209,6 +209,10 @@ func run() int {
 		}
 	}
 
+	if tmp, err := filepath.EvalSymlinks(base); err == nil {
+		base = tmp
+	}
+
 	left := base
 	if cfg.absolute {
 		if left, err = filepath.Abs(base); err != nil {
