@@ -133,14 +133,18 @@ func files(ctx context.Context, cfg *config) chan string {
 }
 
 func makePrintFn(cfg *config) func(string) {
+	var err error
 	if cfg.absolute && !filepath.IsAbs(cfg.base) {
 		return func(s string) {
-			if _, err := os.Stdout.Write([]byte(filepath.Join(cfg.left, s) + "\n")); err != nil {
+			if _, err = os.Stdout.Write([]byte(filepath.Join(cfg.left, s) + "\n")); err != nil {
 				os.Exit(2)
 			}
 		}
 	}
 	return func(s string) {
+		if s, err = filepath.Rel(cfg.left, s); err != nil {
+			os.Exit(2)
+		}
 		if _, err := os.Stdout.Write([]byte(s + "\n")); err != nil {
 			os.Exit(2)
 		}
