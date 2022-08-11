@@ -17,7 +17,7 @@ import (
 
 const (
 	name     = "files"
-	version  = "0.3.5"
+	version  = "0.3.6"
 	revision = "HEAD"
 )
 
@@ -29,6 +29,7 @@ type config struct {
 	fsort         bool
 	match         string
 	directoryOnly bool
+	slash         bool
 
 	base        string
 	left        string
@@ -135,8 +136,25 @@ func files(ctx context.Context, cfg *config) chan string {
 func makePrintFn(cfg *config) func(string) {
 	var err error
 	if cfg.absolute && !filepath.IsAbs(cfg.base) {
+		if cfg.slash {
+			return func(s string) {
+				if _, err = os.Stdout.Write([]byte(filepath.ToSlash(filepath.Join(cfg.left, s)) + "\n")); err != nil {
+					os.Exit(2)
+				}
+			}
+		}
 		return func(s string) {
 			if _, err = os.Stdout.Write([]byte(filepath.Join(cfg.left, s) + "\n")); err != nil {
+				os.Exit(2)
+			}
+		}
+	}
+	if cfg.slash {
+		return func(s string) {
+			if s, err = filepath.Rel(cfg.left, s); err != nil {
+				os.Exit(2)
+			}
+			if _, err := os.Stdout.Write([]byte(filepath.ToSlash(s) + "\n")); err != nil {
 				os.Exit(2)
 			}
 		}
@@ -178,6 +196,7 @@ func run() int {
 	flag.BoolVar(&cfg.fsort, "s", false, "Sort results")
 	flag.StringVar(&cfg.match, "m", "", "Display matched files")
 	flag.BoolVar(&cfg.directoryOnly, "d", false, "Directory only")
+	flag.BoolVar(&cfg.slash, "S", false, "Display slash as separator")
 	flag.BoolVar(&cfg.showVersion, "v", false, "Show version")
 	flag.Parse()
 
