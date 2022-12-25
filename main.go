@@ -189,7 +189,7 @@ func (cfg *config) doPrint(q chan string) {
 
 func run() int {
 	var cfg config
-	flag.StringVar(&cfg.ignore, "i", env(`FILES_IGNORE_PATTERN`, `^(\.git|\.hg|\.svn|_darcs|\.bzr)$`), "Ignore directory")
+	flag.StringVar(&cfg.ignore, "i", env(`FILES_IGNORE_PATTERN`, `(\.git|\.hg|\.svn|_darcs|\.bzr)/`), "Ignore directory")
 	flag.StringVar(&cfg.ignoreenv, "I", "", "Custom environment key for ignore")
 	flag.BoolVar(&cfg.hidden, "H", true, "Ignore hidden")
 	flag.BoolVar(&cfg.absolute, "a", false, "Display absolute path")
