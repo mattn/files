@@ -17,7 +17,7 @@ import (
 
 const (
 	name     = "files"
-	version  = "0.3.7"
+	version  = "0.3.8"
 	revision = "HEAD"
 )
 
@@ -65,7 +65,7 @@ func makeWalkFn(cfg *config, processMatch walkFn) walkFn {
 				return nil
 			}
 			if info.IsDir() {
-				if cfg.ignorere.MatchString(path) {
+				if cfg.ignorere != nil && cfg.ignorere.MatchString(path) {
 					return filepath.SkipDir
 				}
 				return processMatch(path, info)
@@ -85,7 +85,7 @@ func makeWalkFn(cfg *config, processMatch walkFn) walkFn {
 			return nil
 		}
 		if !info.IsDir() {
-			if cfg.ignorere.MatchString(path) {
+			if cfg.ignorere != nil && cfg.ignorere.MatchString(path) {
 				return filepath.SkipDir
 			}
 			return processMatch(path, info)
@@ -217,10 +217,12 @@ func run() int {
 	if cfg.ignoreenv != "" {
 		cfg.ignore = os.Getenv(cfg.ignoreenv)
 	}
-	cfg.ignorere, err = regexp.Compile(cfg.ignore)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	if cfg.ignore != "" {
+		cfg.ignorere, err = regexp.Compile(cfg.ignore)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	}
 	base := "."
 	if flag.NArg() > 0 {
