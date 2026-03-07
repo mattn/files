@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -84,13 +85,16 @@ func makeWalkFn(cfg *config, processMatch walkFn) walkFn {
 			}
 			return nil
 		}
-		if !info.IsDir() {
+		if info.IsDir() {
 			if cfg.ignorere != nil && cfg.ignorere.MatchString(path) {
 				return filepath.SkipDir
 			}
-			return processMatch(path, info)
+			return nil
 		}
-		return nil
+		if cfg.ignorere != nil && cfg.ignorere.MatchString(path) {
+			return nil
+		}
+		return processMatch(path, info)
 	}
 }
 
@@ -111,7 +115,7 @@ func makeMatchFn(cfg *config, q chan string) walkFn {
 }
 
 func files(ctx context.Context, cfg *config) chan string {
-	q := make(chan string, 20)
+	q := make(chan string, 256)
 
 	base := cfg.base
 	sep := string(os.PathSeparator)
@@ -133,20 +137,22 @@ func files(ctx context.Context, cfg *config) chan string {
 	return q
 }
 
-func makePrintFn(cfg *config) func(string) {
+func makePrintFn(cfg *config, w *bufio.Writer) func(string) {
 	var err error
 	if cfg.absolute && !filepath.IsAbs(cfg.base) {
 		if cfg.slash {
 			return func(s string) {
-				if _, err = os.Stdout.Write([]byte(filepath.ToSlash(filepath.Join(cfg.left, s)) + "\n")); err != nil {
+				if _, err = w.WriteString(filepath.ToSlash(filepath.Join(cfg.left, s))); err != nil {
 					os.Exit(2)
 				}
+				w.WriteByte('\n')
 			}
 		}
 		return func(s string) {
-			if _, err = os.Stdout.Write([]byte(filepath.Join(cfg.left, s) + "\n")); err != nil {
+			if _, err = w.WriteString(filepath.Join(cfg.left, s)); err != nil {
 				os.Exit(2)
 			}
+			w.WriteByte('\n')
 		}
 	}
 	if cfg.slash {
@@ -154,23 +160,27 @@ func makePrintFn(cfg *config) func(string) {
 			if s, err = filepath.Rel(cfg.left, s); err != nil {
 				os.Exit(2)
 			}
-			if _, err := os.Stdout.Write([]byte(filepath.ToSlash(s) + "\n")); err != nil {
+			if _, err = w.WriteString(filepath.ToSlash(s)); err != nil {
 				os.Exit(2)
 			}
+			w.WriteByte('\n')
 		}
 	}
 	return func(s string) {
 		if s, err = filepath.Rel(cfg.left, s); err != nil {
 			os.Exit(2)
 		}
-		if _, err := os.Stdout.Write([]byte(s + "\n")); err != nil {
+		if _, err = w.WriteString(s); err != nil {
 			os.Exit(2)
 		}
+		w.WriteByte('\n')
 	}
 }
 
 func (cfg *config) doPrint(q chan string) {
-	printFn := makePrintFn(cfg)
+	w := bufio.NewWriter(os.Stdout)
+	defer w.Flush()
+	printFn := makePrintFn(cfg, w)
 	if cfg.fsort {
 		fs := []string{}
 		for s := range q {
@@ -240,8 +250,8 @@ func run() int {
 
 	left := base
 	if cfg.absolute {
-		if left, err = filepath.Abs(base); err != nil {
-			left = filepath.Dir(left)
+		if abs, err := filepath.Abs(base); err == nil {
+			left = abs
 		}
 	} else if !filepath.IsAbs(base) {
 		if cwd, err := os.Getwd(); err == nil {
@@ -261,12 +271,11 @@ func run() int {
 	go func() {
 		<-sc
 		cancel()
-		sc = nil
 	}()
 
 	cfg.doPrint(files(ctx, &cfg))
 
-	if sc == nil {
+	if ctx.Err() != nil {
 		return 1
 	}
 	return 0
