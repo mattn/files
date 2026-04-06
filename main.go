@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	name     = "files"
-	version  = "0.3.10"
-	revision = "HEAD"
+	name                 = "files"
+	version              = "0.3.10"
+	revision             = "HEAD"
+	defaultIgnorePattern = `(\.git|\.hg|\.svn|_darcs|\.bzr)/`
 )
 
 type config struct {
@@ -36,6 +37,7 @@ type config struct {
 	left        string
 	ignorere    *regexp.Regexp
 	matchre     *regexp.Regexp
+	fastIgnore  bool
 	showVersion bool
 }
 
@@ -48,15 +50,52 @@ func env(key, def string) string {
 
 type walkFn func(path string, info os.FileInfo) error
 
+func isRootPath(cfg *config, path string) bool {
+	if path == cfg.base {
+		return true
+	}
+	if cfg.base == string(os.PathSeparator) {
+		return false
+	}
+	return len(path) == len(cfg.base)+1 &&
+		strings.HasPrefix(path, cfg.base) &&
+		path[len(cfg.base)] == os.PathSeparator
+}
+
 func isHidden(cfg *config, path string) bool {
-	return cfg.hidden && cfg.base != path && filepath.Base(path)[0] == '.'
+	if !cfg.hidden || isRootPath(cfg, path) || path == "" {
+		return false
+	}
+	name := pathBase(path)
+	return name != "" && name[0] == '.'
+}
+
+func pathBase(path string) string {
+	idx := strings.LastIndexByte(path, os.PathSeparator)
+	if idx >= 0 {
+		return path[idx+1:]
+	}
+	return path
+}
+
+func shouldIgnore(cfg *config, path string, info os.FileInfo) bool {
+	if cfg.fastIgnore {
+		if !info.IsDir() {
+			return false
+		}
+		switch pathBase(path) {
+		case ".git", ".hg", ".svn", "_darcs", ".bzr":
+			return true
+		}
+		return false
+	}
+	return cfg.ignorere != nil && cfg.ignorere.MatchString(path)
 }
 
 func makeWalkFn(cfg *config, processMatch walkFn) walkFn {
 	if cfg.directoryOnly {
 		return func(path string, info os.FileInfo) error {
-			path = filepath.Clean(path)
-			if path == "." {
+			if isRootPath(cfg, path) {
 				return nil
 			}
 			if isHidden(cfg, path) {
@@ -66,7 +105,7 @@ func makeWalkFn(cfg *config, processMatch walkFn) walkFn {
 				return nil
 			}
 			if info.IsDir() {
-				if cfg.ignorere != nil && cfg.ignorere.MatchString(path) {
+				if shouldIgnore(cfg, path, info) {
 					return filepath.SkipDir
 				}
 				return processMatch(path, info)
@@ -75,8 +114,7 @@ func makeWalkFn(cfg *config, processMatch walkFn) walkFn {
 		}
 	}
 	return func(path string, info os.FileInfo) error {
-		path = filepath.Clean(path)
-		if path == "." {
+		if isRootPath(cfg, path) {
 			return nil
 		}
 		if isHidden(cfg, path) {
@@ -86,12 +124,12 @@ func makeWalkFn(cfg *config, processMatch walkFn) walkFn {
 			return nil
 		}
 		if info.IsDir() {
-			if cfg.ignorere != nil && cfg.ignorere.MatchString(path) {
+			if shouldIgnore(cfg, path, info) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if cfg.ignorere != nil && cfg.ignorere.MatchString(path) {
+		if shouldIgnore(cfg, path, info) {
 			return nil
 		}
 		return processMatch(path, info)
@@ -104,12 +142,12 @@ func makeMatchFn(cfg *config, q chan string) walkFn {
 			if !cfg.matchre.MatchString(info.Name()) {
 				return nil
 			}
-			q <- filepath.ToSlash(path)
+			q <- path
 			return nil
 		}
 	}
 	return func(path string, info os.FileInfo) error {
-		q <- filepath.ToSlash(path)
+		q <- path
 		return nil
 	}
 }
@@ -117,18 +155,12 @@ func makeMatchFn(cfg *config, q chan string) walkFn {
 func files(ctx context.Context, cfg *config) chan string {
 	q := make(chan string, 256)
 
-	base := cfg.base
-	sep := string(os.PathSeparator)
-	if !strings.HasSuffix(base, sep) {
-		base += sep
-	}
-
 	cb := walker.WithErrorCallback(func(pathname string, err error) error {
 		return nil
 	})
 	go func() {
 		defer close(q)
-		err := walker.WalkWithContext(ctx, base, makeWalkFn(cfg, makeMatchFn(cfg, q)), cb)
+		err := walker.WalkWithContext(ctx, cfg.base, makeWalkFn(cfg, makeMatchFn(cfg, q)), cb)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -137,43 +169,74 @@ func files(ctx context.Context, cfg *config) chan string {
 	return q
 }
 
+func pathPrefix(path string) string {
+	if path == "" || strings.HasSuffix(path, string(os.PathSeparator)) {
+		return path
+	}
+	return path + string(os.PathSeparator)
+}
+
 func makePrintFn(cfg *config, w *bufio.Writer) func(string) {
-	var err error
-	if cfg.absolute && !filepath.IsAbs(cfg.base) {
+	var (
+		err        error
+		basePrefix = pathPrefix(cfg.base)
+		leftPrefix = pathPrefix(cfg.left)
+	)
+	writePath := func(s string) {
 		if cfg.slash {
-			return func(s string) {
-				if _, err = w.WriteString(filepath.ToSlash(filepath.Join(cfg.left, s))); err != nil {
-					os.Exit(2)
-				}
-				w.WriteByte('\n')
-			}
-		}
-		return func(s string) {
-			if _, err = w.WriteString(filepath.Join(cfg.left, s)); err != nil {
-				os.Exit(2)
-			}
-			w.WriteByte('\n')
-		}
-	}
-	if cfg.slash {
-		return func(s string) {
-			if s, err = filepath.Rel(cfg.left, s); err != nil {
-				os.Exit(2)
-			}
-			if _, err = w.WriteString(filepath.ToSlash(s)); err != nil {
-				os.Exit(2)
-			}
-			w.WriteByte('\n')
-		}
-	}
-	return func(s string) {
-		if s, err = filepath.Rel(cfg.left, s); err != nil {
-			os.Exit(2)
+			s = filepath.ToSlash(s)
 		}
 		if _, err = w.WriteString(s); err != nil {
 			os.Exit(2)
 		}
-		w.WriteByte('\n')
+		if err = w.WriteByte('\n'); err != nil {
+			os.Exit(2)
+		}
+	}
+	writePathPair := func(prefix, suffix string) {
+		if cfg.slash {
+			prefix = filepath.ToSlash(prefix)
+			suffix = filepath.ToSlash(suffix)
+		}
+		if _, err = w.WriteString(prefix); err != nil {
+			os.Exit(2)
+		}
+		if _, err = w.WriteString(suffix); err != nil {
+			os.Exit(2)
+		}
+		if err = w.WriteByte('\n'); err != nil {
+			os.Exit(2)
+		}
+	}
+
+	if cfg.absolute {
+		if filepath.IsAbs(cfg.base) {
+			return writePath
+		}
+		return func(s string) {
+			switch {
+			case s == cfg.base:
+				writePath(cfg.left)
+			case strings.HasPrefix(s, basePrefix):
+				writePathPair(leftPrefix, s[len(basePrefix):])
+			default:
+				writePath(filepath.Join(cfg.left, s))
+			}
+		}
+	}
+
+	return func(s string) {
+		switch {
+		case s == cfg.base:
+			writePath(".")
+		case strings.HasPrefix(s, basePrefix):
+			writePath(s[len(basePrefix):])
+		default:
+			if s, err = filepath.Rel(cfg.left, s); err != nil {
+				os.Exit(2)
+			}
+			writePath(s)
+		}
 	}
 }
 
@@ -199,7 +262,7 @@ func (cfg *config) doPrint(q chan string) {
 
 func run() int {
 	var cfg config
-	flag.StringVar(&cfg.ignore, "i", env(`FILES_IGNORE_PATTERN`, `(\.git|\.hg|\.svn|_darcs|\.bzr)/`), "Ignore directory")
+	flag.StringVar(&cfg.ignore, "i", env(`FILES_IGNORE_PATTERN`, defaultIgnorePattern), "Ignore directory")
 	flag.StringVar(&cfg.ignoreenv, "I", "", "Custom environment key for ignore")
 	flag.BoolVar(&cfg.hidden, "H", true, "Ignore hidden")
 	flag.BoolVar(&cfg.absolute, "a", false, "Display absolute path")
@@ -228,10 +291,14 @@ func run() int {
 		cfg.ignore = os.Getenv(cfg.ignoreenv)
 	}
 	if cfg.ignore != "" {
-		cfg.ignorere, err = regexp.Compile(cfg.ignore)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+		if cfg.ignore == defaultIgnorePattern {
+			cfg.fastIgnore = true
+		} else {
+			cfg.ignorere, err = regexp.Compile(cfg.ignore)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
 		}
 	}
 	base := "."
