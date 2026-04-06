@@ -18,7 +18,7 @@ import (
 
 const (
 	name                 = "files"
-	version              = "0.3.10"
+	version              = "0.3.11"
 	revision             = "HEAD"
 	defaultIgnorePattern = `(\.git|\.hg|\.svn|_darcs|\.bzr)/`
 )
